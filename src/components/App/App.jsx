@@ -1,41 +1,86 @@
-import { useEffect, useState } from 'react';
-import css from './App.module.css';
-import ContactList from '../ContactList/ContactList';
-import SearchBox from '../SearchBox/SearchBox';
-import ContactForm from '../ContactForm/ContactForm';
-import initialContacts from "../../../contacts.json"
-
+import { useState, useEffect, useMemo } from "react";
+import css from "./App.module.css";
+import axios from "axios"
+import { fetchImages } from "../../gallery-api.js";
+import SearchBar from "../SearchBar/SearchBar";
+import Loader from "../Loader/Loader";
+import ErrorMessage from "../ErrorMessage/ErrorMessage";
+import LoadMoreBtn from "../LoadMoreBtn/LoadMoreBtn";
+import { useToggle } from "../../useToggle.js";
+import ImageModal from "../ImageModal/ImageModal";
+import ImageGallery from "../ImageGallery/ImageGallery";
 
 export default function App() {
-
-  const [contacts, setContacts] = useState(() => {
-    const savedContacts = localStorage.getItem('contacts');
-    return savedContacts ? JSON.parse(savedContacts) : initialContacts;
-  }
-  );
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const [totalPageNum, setTotalPageNum] = useState(0);
+  const [imageSrc, setImageSrc] = useState("");
+  const [imageDesc, setImageDesc] = useState("");
+  const { isOpen, open, close } = useToggle();
 
   useEffect(() => {
-    localStorage.setItem('contacts', JSON.stringify(contacts));
-  }, [contacts]);
-  
-  const [filter, setFilter] = useState("");
-  const ContactsYouHave = contacts.filter((contact) =>
-    contact.name.toLowerCase().includes(filter.toLowerCase()));
+    if (!query.trim()) return;
 
-  const addNewContact = newContact => {
-    setContacts(prevContacts => [...prevContacts, newContact])
-  }
+    async function fetchData() {
+      try {
+        setLoading(true);
+        setError(false);
+        const { results, total_pages } = await fetchImages(query, page);
+        setItems((prevState) => [...prevState, ...results]);
+        setTotalPageNum(total_pages);
+      } catch {
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, [page, query]);
 
-  const deleteContact = (contactId) => {
-    setContacts(contacts.filter(contact => contact.id !== contactId));
+  const handleSearch = (topic) => {
+    setQuery(topic);
+    setPage(1);
+    setItems([]);
+  };
+
+  const handleLoadMore = async () => {
+    setPage(page + 1);
+  };
+
+  const handleImageClick = (imageSrc, imageDesc) => {
+    setImageSrc(imageSrc);
+    setImageDesc(imageDesc);
+    open();
   };
 
   return (
-    <div className={css.container}>
-      <h1 className={css.appname}>Phonebook</h1>
-      <ContactForm addContact={addNewContact}/>
-      <SearchBox value={filter} onFilter={setFilter} />
-      <ContactList contacts={ContactsYouHave} deleteContact={deleteContact} />
-    </div>
-  )
-};
+    <>
+      <SearchBar onSearch={handleSearch} />
+
+      {error && <ErrorMessage />}
+
+      {items.length > 0 && (
+        <ImageGallery
+          items={items}
+          onClick={open}
+          onOpenModal={handleImageClick}
+        />
+      )}
+      {items.length > 0 && !loading && page < totalPageNum && (
+        <LoadMoreBtn onClick={handleLoadMore} />
+      )}
+
+      {loading && <Loader />}
+
+      <ImageModal
+        isOpen={isOpen}
+        onClose={close}
+        imageSrc={imageSrc}
+        imageDesc={imageDesc}
+      />
+    </>
+  );
+}
